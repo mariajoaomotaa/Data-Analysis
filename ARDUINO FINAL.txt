@@ -1,0 +1,152 @@
+#define ADC_PIN A0
+#define PING_PIN 7 
+#define ECHO_PIN 6 
+#define MICROSECONDS_PER_CENTIMETERS 59  
+#define PIN_LDR A3
+#define DHTPIN 2 
+#define DHTTYPE DHT11   // DHT 11
+#include <LiquidCrystal_I2C.h>
+#include "DHT.h"
+
+LiquidCrystal_I2C lcd(0x27,16,2);
+
+unsigned int ADC_value = 0;
+unsigned long duration, inches, cm;
+float ADC_voltage = 0.0;
+float temperature = 0.0;
+float mean_10 = 0.0;
+int ldr_value = 0;
+unsigned long delay20 = 20;
+unsigned long delay1000 = 1000;
+bool Timeout20 = false;
+bool Timeout1000 = false;
+unsigned long delayStart = 0;
+int incomingByte = 0;
+float h = 0.0;
+float t = 0.0;
+float hic = 0.0;
+float resistance = 0.0;
+float lux = 0.0;
+
+DHT dht(DHTPIN, DHTTYPE);
+
+long microsecondsToCentimeters(long microseconds) {
+   return microseconds / MICROSECONDS_PER_CENTIMETERS;
+}
+
+void updateSerial(){
+  if(Serial.available()>0){
+     incomingByte = Serial.read();
+  }
+}
+
+void setup() {
+  Serial.begin(9600); 
+  pinMode(PING_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  lcd.init();
+  lcd.backlight();
+  DHT dht(DHTPIN, DHTTYPE);
+}
+
+void updateTimer20()  // conta o tempo 
+{
+  if  ((millis() - delayStart) >= delay20) {
+    delayStart += delay20;
+    Timeout20 = true;
+  }
+}
+
+void updateTimer1000()  // conta o tempo 
+{
+  if  ((millis() - delayStart) >= delay1000) {
+    delayStart += delay1000;
+    Timeout1000 = true;
+  }
+}
+
+void tmp36(){  // SENSOR TEMPERATURA ANALÓGICO
+  ADC_value = analogRead(ADC_PIN);
+  // 5V -- 1023        regra de 3 simples
+  // xV -- ADC_value
+  ADC_voltage = ADC_value * 5. /1023.; 
+   
+  // ºC             V               ºC/V
+  temperature = (ADC_voltage-0.5) * 100.;  
+  mean_10 = mean_10*.9 + temperature*.1;  // média móvel de 10 medidas
+}
+
+  void sonar(){ //SONAR
+  
+   digitalWrite(PING_PIN, LOW); 
+   delayMicroseconds(2);
+   digitalWrite(PING_PIN, HIGH);
+   delayMicroseconds(10);
+   digitalWrite(PING_PIN, LOW);
+   duration = pulseIn(ECHO_PIN, HIGH);
+   cm = microsecondsToCentimeters(duration); 
+}
+  
+  void ldr(){  // LDR
+  ldr_value = analogRead(PIN_LDR);
+  resistance = (1023-ldr_value) * 10000/ ldr_value;
+  lux = 500/resistance;
+}
+
+void dht11(){ //DHT11
+  h = dht.readHumidity();
+  t = dht.readTemperature();
+  if (isnan(h) || isnan(t) ) {
+    // Serial.println(F("Failed to read from DHT sensor!"));
+    return;
+  }
+  hic = dht.computeHeatIndex(t, h, false);
+}
+
+void updateLCD(){
+  lcd.setCursor(0,0);
+  lcd.print("L:");
+  lcd.print(lux);
+  lcd.setCursor(0,1);
+  lcd.print("T:");
+  lcd.print(temperature);
+  lcd.print(" graus");
+  lcd.setCursor(10,0);
+  lcd.print("D:");
+  lcd.print(cm);
+  lcd.print("cm");
+}
+
+void loop(){
+  updateTimer20();
+  if (Timeout20 == true) {
+     tmp36();
+     ldr();
+  	 Timeout20 = false;
+  }
+  updateTimer1000();
+  if (Timeout1000 == true) {
+    sonar();
+    dht11();
+  	Timeout1000 = false;
+    updateSerial();
+    Serial.print(temperature); //value 1
+    Serial.print(",");
+    Serial.print(mean_10); //value 2
+    Serial.print(",");
+    Serial.print(cm);  //value 3
+    Serial.print(",");
+    Serial.print(ldr_value);  //value 4
+    Serial.print(",");
+    Serial.print(h); //value 5
+    Serial.print(",");
+    Serial.println(t);  //value 6 //nan é a humidade
+    Serial.print(",");
+    Serial.print(hic); //value 7
+    Serial.print(",");
+    Serial.println(lux); //value 8
+  }
+  updateLCD();
+  delay(20);
+}
+
